@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="DownloadLargeFile.MainPage">
+
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="30,0"
+            Spacing="12">
+            <Image
+                Source="dotnet_bot.png"
+                HeightRequest="140"
+                Aspect="AspectFit"
+                SemanticProperties.Description="dot net bot" />
+
+            <Label
+                Text="Download large file example"
+                Style="{StaticResource Headline}" />
+
+            <Label
+                Text="Enter a direct file URL (for testing use the sample URL)"
+                Style="{StaticResource SubHeadline}" />
+
+            <Entry x:Name="UrlEntry"
+                   Placeholder="https://example.com/200MB.zip"
+                   Text="https://archive.org/download/windows-11-24h2-iso_202501/Win11_24H2_English_x64.iso"
+                   HorizontalOptions="Fill" />
+
+            <HorizontalStackLayout Spacing="8">
+                <Button x:Name="DownloadBtn" Text="Download" Clicked="OnDownloadClicked" HorizontalOptions="FillAndExpand" />
+                <Button x:Name="CancelBtn" Text="Cancel" Clicked="OnCancelClicked" IsEnabled="False" />
+            </HorizontalStackLayout>
+
+            <ProgressBar x:Name="ProgressBar" Progress="0" HeightRequest="8" HorizontalOptions="Fill" />
+            <Label x:Name="ProgressLabel" Text="0%" HorizontalOptions="Center" />
+            <Label x:Name="ProgressLabelText" Text="No file downloaded" HorizontalOptions="Center" Margin="20,0,0,0"/>
+            <Label Text="Saved file will be placed in the app data folder." FontAttributes="Italic" />
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
