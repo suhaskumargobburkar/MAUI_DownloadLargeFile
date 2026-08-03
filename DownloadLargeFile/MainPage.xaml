@@ -31,6 +31,9 @@
                 <Button x:Name="CancelBtn" Text="Cancel" Clicked="OnCancelClicked" IsEnabled="False" />
             </HorizontalStackLayout>
 
+            <Label x:Name="ConnectionStatusLabel" Text="Connection: Unknown" HorizontalOptions="Start" />
+            <Label x:Name="SpeedLabel" Text="Speed: N/A" HorizontalOptions="Start" />
+
             <ProgressBar x:Name="ProgressBar" Progress="0" HeightRequest="8" HorizontalOptions="Fill" />
             <Label x:Name="ProgressLabel" Text="0%" HorizontalOptions="Center" />
             <Label x:Name="ProgressLabelText" Text="No file downloaded" HorizontalOptions="Center" Margin="20,0,0,0"/>

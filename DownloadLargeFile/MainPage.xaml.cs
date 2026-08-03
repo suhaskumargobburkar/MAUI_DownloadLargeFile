@@ -3,18 +3,44 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Networking;
 
 namespace DownloadLargeFile
 {
     public partial class MainPage : ContentPage
     {
         CancellationTokenSource? _cts;
-        string Mymessage { get; set; }
+
         public MainPage()
         {
             InitializeComponent();
+
+            // Subscribe to connectivity changes
+            Connectivity.ConnectivityChanged += OnConnectivityChanged;
+            UpdateConnectivityStatus();
+        }
+
+        protected override void OnDisappearing()
+        {
+            base.OnDisappearing();
+            Connectivity.ConnectivityChanged -= OnConnectivityChanged;
+        }
+
+        private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+        {
+            MainThread.BeginInvokeOnMainThread(UpdateConnectivityStatus);
+        }
+
+        void UpdateConnectivityStatus()
+        {
+            var access = Connectivity.Current.NetworkAccess;
+            var profiles = Connectivity.Current.ConnectionProfiles;
+
+            ConnectionStatusLabel.Text = access.ToString() + (profiles != null ? $" ({string.Join(", ", profiles)})" : string.Empty);
+            SpeedLabel.Text = "Speed: N/A";
         }
 
         private async void OnDownloadClicked(object? sender, EventArgs e)
@@ -30,7 +56,7 @@ namespace DownloadLargeFile
             CancelBtn.IsEnabled = true;
             ProgressBar.Progress = 0;
             ProgressLabel.Text = "0%";
-            ProgressLabelText.Text = "Downloading...";
+            SpeedLabel.Text = "Measuring...";
 
             _cts = new CancellationTokenSource();
 
@@ -40,15 +66,31 @@ namespace DownloadLargeFile
                 if (string.IsNullOrEmpty(fileName)) fileName = "download.bin";
                 var dest = Path.Combine(FileSystem.AppDataDirectory, fileName);
 
-                await DownloadFileAsync(url, dest, _cts.Token, percent =>
-                {
-                    MainThread.BeginInvokeOnMainThread(() =>
+                await DownloadFileAsync(url, dest, _cts.Token,
+                    percent =>
                     {
-                        ProgressBar.Progress = percent / 100.0;
-                        ProgressLabel.Text = $"{percent:F1}%";
-                        ProgressLabelText.Text = Mymessage;
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            ProgressBar.Progress = percent / 100.0;
+                            ProgressLabel.Text = $"{percent:F1}%";
+                        });
+                    },
+                    mbps =>
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            if (mbps <= 0)
+                            {
+                                SpeedLabel.Text = "Speed: N/A";
+                            }
+                            else
+                            {
+                                double kbps = mbps * 1024.0; // using 1024 base consistent with calculation
+                                var quality = GetQualityLabel(mbps);
+                                SpeedLabel.Text = $"{kbps:F2} kbps / {mbps:F2} Mbps ({quality})";
+                            }
+                        });
                     });
-                });
 
                 await DisplayAlert("Completed", $"File saved to:\n{dest}", "OK");
             }
@@ -74,10 +116,9 @@ namespace DownloadLargeFile
             _cts?.Cancel();
         }
 
-        private async Task DownloadFileAsync(string url, string destinationPath, CancellationToken token, Action<double> progress)
+        private async Task DownloadFileAsync(string url, string destinationPath, CancellationToken token, Action<double> progressPercent, Action<double> progressSpeed)
         {
             using var http = new HttpClient();
-            // Request headers only so we can stream
             using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
             response.EnsureSuccessStatusCode();
 
@@ -89,6 +130,11 @@ namespace DownloadLargeFile
             var buffer = new byte[81920];
             long totalRead = 0;
             int read;
+
+            var sw = Stopwatch.StartNew();
+            long lastBytes = 0;
+            var lastTime = sw.Elapsed;
+
             while ((read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), token)) > 0)
             {
                 await fileStream.WriteAsync(buffer.AsMemory(0, read), token);
@@ -97,16 +143,46 @@ namespace DownloadLargeFile
                 if (contentLength.HasValue && contentLength.Value > 0)
                 {
                     double percent = (double)totalRead / contentLength.Value * 100.0;
-                    Mymessage = $"  Downloading... {FormatBytes(totalRead)}/{FormatBytes(contentLength.Value)}";
-                    progress(percent);
+                    progressPercent(percent);
                 }
                 else
                 {
-                    // Unknown total length
-                    Mymessage = "Downloading... (unknown size)";
-                    progress(0);
+                    progressPercent(0);
+                }
+
+                // Compute instantaneous speed every loop
+                var now = sw.Elapsed;
+                var elapsedSinceLast = (now - lastTime).TotalSeconds;
+                if (elapsedSinceLast >= 0.5)
+                {
+                    var bytesSinceLast = totalRead - lastBytes;
+                    double bytesPerSecond = bytesSinceLast / elapsedSinceLast;
+                    double mbps = bytesPerSecond * 8.0 / (1024 * 1024);
+                    progressSpeed(mbps);
+
+                    lastBytes = totalRead;
+                    lastTime = now;
                 }
             }
+
+            // final speed calculation
+            var totalSeconds = sw.Elapsed.TotalSeconds;
+            if (totalSeconds > 0)
+            {
+                double bytesPerSecond = totalRead / totalSeconds;
+                double mbps = bytesPerSecond * 8.0 / (1024 * 1024);
+                progressSpeed(mbps);
+            }
+        }
+
+        static string GetQualityLabel(double mbps)
+        {
+            if (mbps <= 0) return "Unknown";
+            if (mbps < 0.5) return "Very poor";
+            if (mbps < 1) return "Poor";
+            if (mbps < 5) return "Fair";
+            if (mbps < 20) return "Good";
+            return "Excellent";
         }
 
         public string FormatBytes(long bytes)
@@ -118,7 +194,6 @@ namespace DownloadLargeFile
             double size = bytes;
             int unitIndex = 0;
 
-            // Keep dividing until size is less than 1024 or we reach the largest unit
             while (size >= 1024 && unitIndex < units.Length - 1)
             {
                 size /= 1024;
